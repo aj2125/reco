@@ -4,36 +4,22 @@ from sklearn.model_selection import train_test_split
 import xgboost as xgb
 import joblib
 
-# Load data
 df = pd.read_csv('mock_events.csv')
-weights = df[['event_type','weight']].drop_duplicates()
-
-# Feature: encode user-vehicle pairs
-df['vehicle_id'] = df['make'] + '_' + df['model'] + '_' + df['trim'] + '_' + df['year'].astype(str)
-le_user = LabelEncoder().fit(df['user_id'])
-le_item = LabelEncoder().fit(df['vehicle_id'])
-df['user_idx'] = le_user.transform(df['user_id'])
-df['item_idx'] = le_item.transform(df['vehicle_id'])
-
-# Aggregate features per user-item
-agg = df.groupby(['user_idx','item_idx']).agg(
-    weight_sum=('weight','sum'),
-    weight_max=('weight','max'),
-    event_count=('event_type','nunique'),
-    session_count=('timestamp','nunique')
-).reset_index()
-
-# Train-test split
-X = agg[['user_idx','item_idx','weight_sum','weight_max','event_count','session_count']]
-y = (agg['weight_max'] > 0.5).astype(int)
+# Encode user/item
+df['vehicle_id'] = df['make'] + '_' + df['model'] + '_' + df['trim'] + '_' + df.get('year',0).astype(str)
+le_u = LabelEncoder().fit(df['user_id'])
+le_i = LabelEncoder().fit(df['vehicle_id'])
+df['u_idx'] = le_u.transform(df['user_id'])
+df['i_idx'] = le_i.transform(df['vehicle_id'])
+# Aggregate
+agg = df.groupby(['u_idx','i_idx']).agg(weight_sum=('weight','sum'),
+                                       weight_max=('weight','max')).reset_index()
+X = agg[['u_idx','i_idx','weight_sum','weight_max']]
+y = (agg['weight_max']>0.5).astype(int)
 X_train,X_val,y_train,y_val = train_test_split(X,y,test_size=0.2,random_state=42)
-
 dtrain = xgb.DMatrix(X_train, label=y_train)
 dval = xgb.DMatrix(X_val, label=y_val)
-
-params = {'objective':'binary:logistic','eval_metric':'auc'}
-bst = xgb.train(params, dtrain, num_boost_round=50, evals=[(dval,'val')])
-
+bst = xgb.train({'objective':'binary:logistic','eval_metric':'auc'}, dtrain, 20, [(dval,'val')])
 bst.save_model('model.xgb')
-joblib.dump({'le_user': le_user, 'le_item': le_item}, 'encoders.pkl')
-print('Model and encoders saved.')
+joblib.dump({'le_u':le_u,'le_i':le_i}, 'encoders.pkl')
+print('Model trained.')
