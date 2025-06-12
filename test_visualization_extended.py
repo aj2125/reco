@@ -10,15 +10,13 @@ import matplotlib.pyplot as plt
 
 # --- Load data ---
 events = pd.read_csv('mock_events.csv', parse_dates=['timestamp'])
-ymmt = pd.read_csv('cars_ymmt.csv')
-ymmt['vehicle'] = ymmt.apply(lambda r: f"{int(r.year)} {r.make} {r.model} {r.trim}", axis=1)
-
+# Use 'vehicle' composite string directly
+events['vehicle'] = events['vehicle']
 # Sample 5 users
 users = events['user_id'].unique()[:5]
 
 # --- Table 1: Raw Interactions ---
-raw = events[events['user_id'].isin(users)][['user_id','event_type','vehicle_id','weight']].drop_duplicates()
-raw = raw.merge(ymmt[['vehicle_id','vehicle']], on='vehicle_id')[['user_id','event_type','vehicle','weight']]
+raw = events[events['user_id'].isin(users)][['user_id','event_type','vehicle','weight']].drop_duplicates()
 print("\nRaw Interactions:")
 print(raw)
 
@@ -27,23 +25,24 @@ print("\nWeighted Interactions:")
 print(raw)
 
 # --- Feature Engineering ---
-df = events.copy()
-df['vehicle_id'] = df['vehicle_id']
-agg = df.groupby(['user_id','vehicle_id']).agg(
+agg = events.groupby(['user_id','vehicle']).agg(
     weight_sum=('weight','sum'),
     weight_max=('weight','max'),
     event_type_count=('event_type','nunique'),
     session_count=('timestamp','nunique')
 ).reset_index()
-agg['hours_since_last'] = (pd.Timestamp.now() - df.groupby(['user_id','vehicle_id'])['timestamp'].max()).dt.total_seconds()/3600
-agg = agg.merge(ymmt[['vehicle_id','year']], on='vehicle_id')
+agg['hours_since_last'] = (pd.Timestamp.now() - events.groupby(['user_id','vehicle'])['timestamp'].max()).dt.total_seconds()/3600
+# Vehicle age from YMMT lookup
+ymmt = pd.read_csv('cars_ymmt.csv')
+ymmt['vehicle'] = ymmt.apply(lambda r: f"{int(r.year)} {r.make} {r.model} {r.trim}", axis=1)
+agg = agg.merge(ymmt[['vehicle','year']], on='vehicle', how='left')
 agg['vehicle_age'] = pd.Timestamp.now().year - agg['year']
 
 # Label encoding
 le_u = LabelEncoder().fit(agg['user_id'])
-le_i = LabelEncoder().fit(agg['vehicle_id'])
+le_i = LabelEncoder().fit(agg['vehicle'])
 agg['u_idx'] = le_u.transform(agg['user_id'])
-agg['i_idx'] = le_i.transform(agg['vehicle_id'])
+agg['i_idx'] = le_i.transform(agg['vehicle'])
 
 # Train XGB for feature importance
 X = agg[['u_idx','i_idx','weight_sum','weight_max','event_type_count','session_count','hours_since_last','vehicle_age']]
@@ -68,15 +67,15 @@ plt.savefig('shap_summary.png')
 plt.show()
 
 # --- Collaborative Filtering SVD ---
-pivot = agg.pivot_table(index='user_id', columns='vehicle_id', values='weight_sum', fill_value=0)
+pivot = agg.pivot_table(index='user_id', columns='vehicle', values='weight_sum', fill_value=0)
 svd = TruncatedSVD(n_components=2, random_state=42)
 item_factors = svd.fit_transform(pivot.T)
 labels = pivot.columns.tolist()
 
 # Choose first user for known/new
 user0 = users[0]
-known0 = set(df[df['user_id']==user0]['vehicle_id'])
-colors = ['red' if vid in known0 else 'blue' for vid in labels]
+known0 = set(events[events['user_id']==user0]['vehicle'])
+colors = ['red' if v in known0 else 'blue' for v in labels]
 
 # --- Embedding Scatter ---
 plt.figure()
@@ -99,13 +98,10 @@ plt.savefig('score_distribution.png')
 plt.show()
 
 # --- Coverage / Popularity Curve ---
-# Generate top-5 for each user
-scores_all = bst.predict(xgb.DMatrix(X))
-agg['score'] = scores_all
+agg['score'] = bst.predict(xgb.DMatrix(X))
 top5 = agg.sort_values(['user_id','score'], ascending=[True,False]).groupby('user_id').head(5)
-pop = top5['vehicle_id'].value_counts().reset_index()
-pop.columns = ['vehicle_id','count']
-pop = pop.merge(ymmt[['vehicle_id','vehicle']], on='vehicle_id').reset_index(drop=True)
+pop = top5['vehicle'].value_counts().reset_index()
+pop.columns = ['vehicle','count']
 pop['cum_count'] = pop['count'].cumsum()
 plt.figure()
 plt.plot(range(1,len(pop)+1), pop['cum_count'], marker='o')
