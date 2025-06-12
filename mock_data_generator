@@ -1,5 +1,6 @@
 import pandas as pd
 import random
+import json
 from datetime import datetime, timedelta
 
 # Load reference tables
@@ -7,7 +8,10 @@ marginals_df = pd.read_csv('marginals.csv')
 transitions_df = pd.read_csv('transitions.csv')
 cooccurrence_df = pd.read_csv('cooccurrence.csv')
 weights_df = pd.read_csv('event_weights.csv')
-ymmt_df = pd.read_csv('ymmt.csv')
+ymmt_df = pd.read_csv('cars_ymmt.csv')  # renamed YMMT file
+# Load event fields mapping
+with open('event_fields.json') as f:
+    event_fields = json.load(f)
 
 # Build dicts
 marginals = marginals_df.set_index('event_type')['marginal_prob'].to_dict()
@@ -19,49 +23,62 @@ for _, row in cooccurrence_df.iterrows():
     cooccurs.setdefault(row['event'], []).append((row['co_event'], row['probability']))
 weights = weights_df.set_index('event_type')['weight'].to_dict()
 
-# Config
+# Configuration
 NUM_USERS = 100
 SESSIONS_PER_USER = 2
 OUTPUT_PATH = 'mock_events.csv'
 
 records = []
-for u in range(1, NUM_USERS+1):
+for u in range(1, NUM_USERS + 1):
     user = f'U{u:03d}'
-    for s in range(SESSIONS_PER_USER):
-        # Session start: sample first event by marginal
-        events = list(marginals.keys())
-        probs = list(marginals.values())
-        event = random.choices(events, probs)[0]
-        prev_event = event
+    for _ in range(SESSIONS_PER_USER):
+        # Sample first event by marginals
+        first_event = random.choices(list(marginals.keys()), list(marginals.values()))[0]
+        seq = [first_event]
+        prev = first_event
+        # Build sequence
+        while prev in transitions and transitions[prev]:
+            choices, probs = zip(*transitions[prev].items())
+            next_event = random.choices(choices, probs)[0]
+            seq.append(next_event)
+            prev = next_event
+        # Emit events with co-occurrence
         timestamp = datetime.now() - timedelta(hours=random.uniform(0, 168))
-        # Emit first event
-        seq = [event]
-        # Then follow transitions
-        while prev_event in transitions and transitions[prev_event]:
-            next_events = list(transitions[prev_event].keys())
-            next_probs = list(transitions[prev_event].values())
-            event = random.choices(next_events, next_probs)[0]
-            seq.append(event)
-            prev_event = event
-        # Build records with co-occurrence
-        for ev in seq:
-            rec = {'user_id': user, 'event_type': ev, 'timestamp': timestamp}
-            # Apply co-occurrence
+        i = 0
+        while i < len(seq):
+            ev = seq[i]
+            # Co-occurrence injection
             if ev in cooccurs:
                 for co_ev, p in cooccurs[ev]:
                     if random.random() < p:
-                        seq.insert(seq.index(ev)+1, co_ev)
-            # Attach metadata
-            defn = {'fields': [], 'weight': weights.get(ev, 0)}
-            if ev in weights:
-                defn['weight'] = weights[ev]
-            if any(f in defn['fields'] for f in ['year','make','model','trim']):
+                        seq.insert(i + 1, co_ev)
+            # Create record
+            rec = {'user_id': user, 'event_type': ev, 'timestamp': timestamp}
+            fields = event_fields.get(ev, [])
+            # Attach YMMT metadata if required
+            if any(f in fields for f in ['year', 'make', 'model', 'trim']):
                 vehicle = ymmt_df.sample(1).iloc[0]
-                rec.update(vehicle.to_dict())
-                rec['condition'] = random.choice(['New','Used'])
-            rec['weight'] = defn['weight']
+                for f in ['year', 'make', 'model', 'trim']:
+                    if f in fields:
+                        rec[f] = vehicle[f]
+                if 'condition' in fields:
+                    rec['condition'] = random.choice(['New', 'Used'])
+            # Attach other conditional fields
+            if 'credit_band' in fields:
+                rec['credit_band'] = random.choice(['Excellent', 'Good', 'Fair', 'Poor'])
+            if 'dealer_id' in fields:
+                rec['dealer_id'] = f'D{random.randint(1,50):03d}'
+            if 'zipcode' in fields:
+                rec['zipcode'] = str(random.randint(10000, 99999))
+            if 'vin' in fields:
+                rec['vin'] = f'VIN{random.randint(1000000, 9999999)}'
+            if 'offer_amount' in fields:
+                rec['offer_amount'] = random.randint(10000, 70000)
+            # Attach weight
+            rec['weight'] = weights.get(ev, 0)
             records.append(rec)
-            timestamp += timedelta(minutes=random.randint(1,10))
+            timestamp += timedelta(minutes=random.randint(1, 10))
+            i += 1
 
 pd.DataFrame(records).to_csv(OUTPUT_PATH, index=False)
 print(f'Generated {len(records)} events to {OUTPUT_PATH}')
