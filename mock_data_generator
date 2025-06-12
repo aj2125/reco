@@ -59,9 +59,15 @@ for u in range(1, NUM_USERS + 1):
             # Create record
             rec = {'user_id': user, 'event_type': ev, 'timestamp': timestamp}
             fields = event_fields.get(ev, [])
-            # Attach YMMT metadata if required
+            # Attach individual YMMT metadata if required
             if any(f in fields for f in ['year', 'make', 'model', 'trim']):
                 vehicle = ymmt_df.sample(1).iloc[0]
+                # individual fields
+                rec['year'] = int(vehicle['year'])
+                rec['make'] = vehicle['make']
+                rec['model'] = vehicle['model']
+                rec['trim'] = vehicle['trim']
+                # composite
                 rec['vehicle'] = vehicle['vehicle']
                 if 'condition' in fields:
                     rec['condition'] = random.choice(['New', 'Used'])
