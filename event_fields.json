@@ -1,0 +1,117 @@
+{
+  "visited_digital_vehicle_garage": [
+    "year",
+    "make"
+  ],
+  "interacted_with_insurance_offer": [],
+  "interacted_with_carsale_offer": [],
+  "calculator_search": [
+    "year",
+    "make",
+    "condition",
+    "credit_band"
+  ],
+  "vehicle_added_in_garage": [
+    "year",
+    "make",
+    "model",
+    "trim",
+    "condition"
+  ],
+  "prequalification_approved_with_amount": [
+    "offer_amount"
+  ],
+  "preapproved_offer": [
+    "offer_amount"
+  ],
+  "prequalification_rejected": [
+    "offer_amount"
+  ],
+  "marketplace_vehicle_search": [
+    "year",
+    "make",
+    "model",
+    "trim",
+    "condition"
+  ],
+  "marketplace_vdp_visit": [
+    "year",
+    "make",
+    "model",
+    "trim",
+    "condition",
+    "dealer_id",
+    "zipcode",
+    "vin"
+  ],
+  "lead_created": [
+    "year",
+    "make",
+    "model",
+    "trim",
+    "condition",
+    "dealer_id",
+    "zipcode"
+  ],
+  "application_start_marketplace": [
+    "year",
+    "make",
+    "model",
+    "trim",
+    "condition",
+    "dealer_id",
+    "zipcode"
+  ],
+  "application_start_not_marketplace": [
+    "year",
+    "make",
+    "model",
+    "trim",
+    "condition",
+    "dealer_id",
+    "zipcode"
+  ],
+  "marketplace_favorited_vehicle": [
+    "year",
+    "make",
+    "model",
+    "trim",
+    "condition"
+  ],
+  "application_submitted": [
+    "year",
+    "make",
+    "model",
+    "trim",
+    "condition",
+    "dealer_id",
+    "zipcode"
+  ],
+  "application_approved": [
+    "year",
+    "make",
+    "model",
+    "trim",
+    "condition",
+    "dealer_id",
+    "zipcode"
+  ],
+  "application_rejected": [
+    "year",
+    "make",
+    "model",
+    "trim",
+    "condition",
+    "dealer_id",
+    "zipcode"
+  ],
+  "application_booked": [
+    "year",
+    "make",
+    "model",
+    "trim",
+    "condition",
+    "dealer_id",
+    "zipcode"
+  ]
+}
