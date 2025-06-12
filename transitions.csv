@@ -1,0 +1,10 @@
+from_event,to_event,probability
+start,view,1.0
+view,favorite,0.7
+view,calculator_search,0.3
+favorite,calculator_search,0.6
+favorite,started_app,0.4
+calculator_search,started_app,0.5
+calculator_search,submitted_app,0.5
+started_app,submitted_app,0.8
+started_app,view,0.2

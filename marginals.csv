@@ -1,0 +1,13 @@
+event_type,marginal_prob
+visited_digital_vehicle_garage,0.10
+interacted_with_insurance_offer,0.05
+interacted_with_carsale_offer,0.05
+calculator_search,0.15
+vehicle_added_in_garage,0.10
+marketplace_vehicle_search,0.20
+marketplace_vdp_visit,0.10
+lead_created,0.08
+application_start_marketplace,0.07
+application_start_not_marketplace,0.05
+marketplace_favorited_vehicle,0.05
+application_submitted,0.03

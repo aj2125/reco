@@ -1,0 +1,5 @@
+event,co_event,probability
+view,calculator_search,0.4
+favorite,vehicle_added_in_garage,0.3
+calculator_search,submitted_app,0.2
+lead_created,marketplace_vdp_visit,0.5
