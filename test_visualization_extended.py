@@ -1,113 +1,92 @@
 import pandas as pd
-import numpy as np
-from sklearn.decomposition import TruncatedSVD
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split
-import xgboost as xgb
-import shap
-from scipy.spatial.distance import cdist
-import matplotlib.pyplot as plt
+import random
+import json
+from datetime import datetime, timedelta
 
-# --- Load data ---
-events = pd.read_csv('mock_events.csv', parse_dates=['timestamp'])
-# Use 'vehicle' composite string directly
-events['vehicle'] = events['vehicle']
-# Sample 5 users
-users = events['user_id'].unique()[:5]
+# Load reference tables
+marginals_df = pd.read_csv('marginals.csv')
+transitions_df = pd.read_csv('transitions.csv')
+cooccurrence_df = pd.read_csv('cooccurrence.csv')
+weights_df = pd.read_csv('event_weights.csv')
+ymmt_df = pd.read_csv('cars_ymmt.csv')  # Contains vehicle metadata
 
-# --- Table 1: Raw Interactions ---
-raw = events[events['user_id'].isin(users)][['user_id','event_type','vehicle','weight']].drop_duplicates()
-print("\nRaw Interactions:")
-print(raw)
+# Create composite string identifier
+ymmt_df['vehicle'] = ymmt_df.apply(lambda r: f"{int(r.year)} {r.make} {r.model} {r.trim}", axis=1)
 
-# --- Table 2: Weighted Interactions ---
-print("\nWeighted Interactions:")
-print(raw)
+# Load event fields mapping
+with open('event_fields.json') as f:
+    event_fields = json.load(f)
 
-# --- Feature Engineering ---
-agg = events.groupby(['user_id','vehicle']).agg(
-    weight_sum=('weight','sum'),
-    weight_max=('weight','max'),
-    event_type_count=('event_type','nunique'),
-    session_count=('timestamp','nunique')
-).reset_index()
-agg['hours_since_last'] = (pd.Timestamp.now() - events.groupby(['user_id','vehicle'])['timestamp'].max()).dt.total_seconds()/3600
-# Vehicle age from YMMT lookup
-ymmt = pd.read_csv('cars_ymmt.csv')
-ymmt['vehicle'] = ymmt.apply(lambda r: f"{int(r.year)} {r.make} {r.model} {r.trim}", axis=1)
-agg = agg.merge(ymmt[['vehicle','year']], on='vehicle', how='left')
-agg['vehicle_age'] = pd.Timestamp.now().year - agg['year']
+# Build dicts
+marginals = marginals_df.set_index('event_type')['marginal_prob'].to_dict()
+transitions = {}
+for _, row in transitions_df.iterrows():
+    transitions.setdefault(row['from_event'], {})[row['to_event']] = row['probability']
+cooccurs = {}
+for _, row in cooccurrence_df.iterrows():
+    cooccurs.setdefault(row['event'], []).append((row['co_event'], row['probability']))
+weights = weights_df.set_index('event_type')['weight'].to_dict()
 
-# Label encoding
-le_u = LabelEncoder().fit(agg['user_id'])
-le_i = LabelEncoder().fit(agg['vehicle'])
-agg['u_idx'] = le_u.transform(agg['user_id'])
-agg['i_idx'] = le_i.transform(agg['vehicle'])
+# Configuration
+NUM_USERS = 100
+SESSIONS_PER_USER = 2
+OUTPUT_PATH = 'mock_events.csv'
 
-# Train XGB for feature importance
-X = agg[['u_idx','i_idx','weight_sum','weight_max','event_type_count','session_count','hours_since_last','vehicle_age']]
-y = (agg['weight_max'] > 0.5).astype(int)
-X_train,X_val,y_train,y_val = train_test_split(X,y,test_size=0.2,random_state=42)
-dtrain = xgb.DMatrix(X_train, label=y_train)
-dval = xgb.DMatrix(X_val, label=y_val)
-bst = xgb.train({'objective':'binary:logistic','eval_metric':'auc'}, dtrain, num_boost_round=20, evals=[(dval,'val')])
+records = []
+for u in range(1, NUM_USERS + 1):
+    user = f'U{u:03d}'
+    for _ in range(SESSIONS_PER_USER):
+        # Sample first event by marginals
+        first_event = random.choices(list(marginals.keys()), list(marginals.values()))[0]
+        seq = [first_event]
+        prev = first_event
+        # Build sequence
+        while prev in transitions and transitions[prev]:
+            choices, probs = zip(*transitions[prev].items())
+            next_event = random.choices(choices, probs)[0]
+            seq.append(next_event)
+            prev = next_event
+        # Emit events with co-occurrence
+        timestamp = datetime.now() - timedelta(hours=random.uniform(0, 168))
+        i = 0
+        while i < len(seq):
+            ev = seq[i]
+            # Co-occurrence injection
+            if ev in cooccurs:
+                for co_ev, p in cooccurs[ev]:
+                    if random.random() < p:
+                        seq.insert(i + 1, co_ev)
+            # Create record
+            rec = {'user_id': user, 'event_type': ev, 'timestamp': timestamp}
+            fields = event_fields.get(ev, [])
+            # Attach individual YMMT metadata if required
+            if any(f in fields for f in ['year', 'make', 'model', 'trim']):
+                vehicle = ymmt_df.sample(1).iloc[0]
+                # individual fields
+                rec['year'] = int(vehicle['year'])
+                rec['make'] = vehicle['make']
+                rec['model'] = vehicle['model']
+                rec['trim'] = vehicle['trim']
+                # composite
+                rec['vehicle'] = vehicle['vehicle']
+                if 'condition' in fields:
+                    rec['condition'] = random.choice(['New', 'Used'])
+            # Attach other conditional fields
+            if 'credit_band' in fields:
+                rec['credit_band'] = random.choice(['Excellent', 'Good', 'Fair', 'Poor'])
+            if 'dealer_id' in fields:
+                rec['dealer_id'] = f'D{random.randint(1,50):03d}'
+            if 'zipcode' in fields:
+                rec['zipcode'] = str(random.randint(10000, 99999))
+            if 'vin' in fields:
+                rec['vin'] = f'VIN{random.randint(1000000, 9999999)}'
+            if 'offer_amount' in fields:
+                rec['offer_amount'] = random.randint(10000, 70000)
+            # Attach weight
+            rec['weight'] = weights.get(ev, 0)
+            records.append(rec)
+            timestamp += timedelta(minutes=random.randint(1, 10))
+            i += 1
 
-# --- Plot Feature Importance ---
-xgb.plot_importance(bst, max_num_features=8, title='Feature Importance')
-plt.tight_layout()
-plt.savefig('feature_importance.png')
-plt.show()
-
-# --- SHAP Summary ---
-explainer = shap.TreeExplainer(bst)
-shap_vals = explainer.shap_values(dval)
-shap.summary_plot(shap_vals, X_val, show=False)
-plt.tight_layout()
-plt.savefig('shap_summary.png')
-plt.show()
-
-# --- Collaborative Filtering SVD ---
-pivot = agg.pivot_table(index='user_id', columns='vehicle', values='weight_sum', fill_value=0)
-svd = TruncatedSVD(n_components=2, random_state=42)
-item_factors = svd.fit_transform(pivot.T)
-labels = pivot.columns.tolist()
-
-# Choose first user for known/new
-user0 = users[0]
-known0 = set(events[events['user_id']==user0]['vehicle'])
-colors = ['red' if v in known0 else 'blue' for v in labels]
-
-# --- Embedding Scatter ---
-plt.figure()
-for x,y,c,label in zip(item_factors[:,0], item_factors[:,1], colors, labels):
-    plt.scatter(x, y, c=c)
-    plt.text(x, y, label, fontsize=8)
-plt.title(f'Embeddings Scatter (Red=Known, Blue=New) for {user0}')
-plt.tight_layout()
-plt.savefig('embeddings_scatter.png')
-plt.show()
-
-# --- Score Distribution Histogram ---
-preds = bst.predict(xgb.DMatrix(X_val))
-plt.figure()
-plt.hist(preds, bins=20)
-plt.title('Score Distribution Histogram')
-plt.xlabel('Score'); plt.ylabel('Frequency')
-plt.tight_layout()
-plt.savefig('score_distribution.png')
-plt.show()
-
-# --- Coverage / Popularity Curve ---
-agg['score'] = bst.predict(xgb.DMatrix(X))
-top5 = agg.sort_values(['user_id','score'], ascending=[True,False]).groupby('user_id').head(5)
-pop = top5['vehicle'].value_counts().reset_index()
-pop.columns = ['vehicle','count']
-pop['cum_count'] = pop['count'].cumsum()
-plt.figure()
-plt.plot(range(1,len(pop)+1), pop['cum_count'], marker='o')
-plt.xticks(range(1,len(pop)+1), pop['vehicle'], rotation=45, ha='right')
-plt.title('Coverage / Popularity Curve')
-plt.ylabel('Cumulative Count')
-plt.tight_layout()
-plt.savefig('coverage_curve.png')
-plt.show()
+pd.DataFrame(records).to_csv(OUTPUT_PATH, index=False)
+print(f'Generated {len(records)} events to {OUTPUT_PATH}')
