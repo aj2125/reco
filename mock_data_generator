@@ -1,0 +1,55 @@
+import pandas as pd
+import random
+from datetime import datetime, timedelta
+
+# Configuration
+NUM_USERS = 100
+MIN_EVENTS_PER_USER = 5
+MAX_EVENTS_PER_USER = 15
+YMMT_PATH = 'ymmt.csv'            # Ensure ymmt.csv exists
+OUTPUT_PATH = 'mock_events.csv'
+
+# Load vehicle metadata
+ymmt_df = pd.read_csv(YMMT_PATH)
+
+# Event definitions with weights
+event_definitions = {
+    "calculator_search": {"fields": ["year","make","condition","credit_band"], "weight":0.1},
+    "vehicle_added_in_garage": {"fields": ["year","make","model","trim","condition"], "weight":0.4},
+    "marketplace_vehicle_search": {"fields": ["year","make","model","trim","condition"], "weight":0.2},
+    "marketplace_vdp_visit": {"fields": ["year","make","model","trim","condition","dealer_id","zipcode","vin"], "weight":0.3},
+    "lead_created": {"fields": ["year","make","model","trim","condition","dealer_id","zipcode"], "weight":0.6},
+    "application_start_marketplace": {"fields": ["year","make","model","trim","condition","dealer_id","zipcode"], "weight":0.7},
+    "application_start_not_marketplace": {"fields": [], "weight":0.7},
+    "application_submitted": {"fields": ["year","make","model","trim","condition","dealer_id","zipcode"], "weight":0.9},
+    "application_approved": {"fields": ["year","make","model","trim","condition","dealer_id","zipcode"], "weight":1.2},
+    "marketplace_favorited_vehicle": {"fields": ["year","make","model","trim","condition"], "weight":0.45}
+}
+
+# Generate mock events
+records = []
+for u in range(1, NUM_USERS+1):
+    user_id = f'U{u:03d}'
+    for _ in range(random.randint(MIN_EVENTS_PER_USER, MAX_EVENTS_PER_USER)):
+        event = random.choice(list(event_definitions.keys()))
+        defn = event_definitions[event]
+        timestamp = datetime.now() - timedelta(hours=random.uniform(0,168))
+        rec = {'user_id': user_id, 'event_type': event, 'timestamp': timestamp}
+        # Sample vehicle metadata
+        if any(f in defn['fields'] for f in ['year','make','model','trim']):
+            v = ymmt_df.sample(1).iloc[0]
+            rec.update(v.to_dict())
+            rec['condition'] = random.choice(['New','Used'])
+        if 'credit_band' in defn['fields']:
+            rec['credit_band'] = random.choice(['Excellent','Good','Fair','Poor'])
+        if 'dealer_id' in defn['fields']:
+            rec['dealer_id'] = f'D{random.randint(1,50):03d}'
+        if 'zipcode' in defn['fields']:
+            rec['zipcode'] = str(random.randint(10000,99999))
+        if 'vin' in defn['fields']:
+            rec['vin'] = f'VIN{random.randint(1000000,9999999)}'
+        rec['weight'] = defn['weight']
+        records.append(rec)
+
+pd.DataFrame(records).to_csv(OUTPUT_PATH, index=False)
+print(f'Generated {len(records)} mock events to {OUTPUT_PATH}')
