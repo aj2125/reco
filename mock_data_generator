@@ -8,7 +8,11 @@ marginals_df = pd.read_csv('marginals.csv')
 transitions_df = pd.read_csv('transitions.csv')
 cooccurrence_df = pd.read_csv('cooccurrence.csv')
 weights_df = pd.read_csv('event_weights.csv')
-ymmt_df = pd.read_csv('cars_ymmt.csv')  # renamed YMMT file
+ymmt_df = pd.read_csv('cars_ymmt.csv')  # Contains vehicle metadata
+
+# Create composite string identifier
+ymmt_df['vehicle'] = ymmt_df.apply(lambda r: f"{int(r.year)} {r.make} {r.model} {r.trim}", axis=1)
+
 # Load event fields mapping
 with open('event_fields.json') as f:
     event_fields = json.load(f)
@@ -58,9 +62,7 @@ for u in range(1, NUM_USERS + 1):
             # Attach YMMT metadata if required
             if any(f in fields for f in ['year', 'make', 'model', 'trim']):
                 vehicle = ymmt_df.sample(1).iloc[0]
-                for f in ['year', 'make', 'model', 'trim']:
-                    if f in fields:
-                        rec[f] = vehicle[f]
+                rec['vehicle'] = vehicle['vehicle']
                 if 'condition' in fields:
                     rec['condition'] = random.choice(['New', 'Used'])
             # Attach other conditional fields
